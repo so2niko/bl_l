@@ -76,7 +76,7 @@ async function renderPostPage(posts, slug) {
   }
 
   const title = post.title || toReadableTitle(post.slug);
-  const markdownText = post.markdown;
+  const markdownText = stripLeadingHeading(post.markdown);
   const photosHtml = post.photos.length
     ? post.photos
         .map(
@@ -183,6 +183,23 @@ function getTitleFromMarkdown(markdown, fallbackSlug) {
 
   const cleanTitle = firstContentLine.replace(/^#{1,6}\s*/, '').trim();
   return cleanTitle || toReadableTitle(fallbackSlug);
+}
+
+// The post page renders the title separately, so strip the first heading
+// from the markdown body to avoid showing the same title twice.
+function stripLeadingHeading(markdown) {
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
+  const firstNonEmptyIndex = lines.findIndex((line) => line.trim() !== '');
+
+  if (firstNonEmptyIndex === -1) {
+    return markdown;
+  }
+  if (!/^#{1,6}\s+/.test(lines[firstNonEmptyIndex])) {
+    return markdown;
+  }
+
+  lines.splice(firstNonEmptyIndex, 1);
+  return lines.join('\n');
 }
 
 function collectPhotosBySlug() {
