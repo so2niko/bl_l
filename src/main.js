@@ -185,7 +185,7 @@ function renderFatalError(error) {
 let postsCache = [];
 
 async function start() {
-  postsCache = await fetch('/data/posts.json').then((response) => response.json());
+  postsCache = await fetch(`${baseUrl}data/posts.json`).then((response) => response.json());
   await renderRoute(postsCache);
   window.addEventListener('popstate', () => {
     renderRoute(postsCache).catch(renderFatalError);
