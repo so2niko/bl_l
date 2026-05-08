@@ -1,9 +1,12 @@
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const rootDir = process.cwd();
 const postsDir = path.join(rootDir, 'content', 'posts');
 const imagesDir = path.join(rootDir, 'content', 'images');
+const publicContentDir = path.join(rootDir, 'public', 'content');
+const publicPostsDir = path.join(publicContentDir, 'posts');
+const publicImagesDir = path.join(publicContentDir, 'images');
 const outputDir = path.join(rootDir, 'public', 'data');
 const outputFile = path.join(outputDir, 'posts.json');
 
@@ -26,6 +29,8 @@ async function listFilesSafe(targetDir) {
 }
 
 async function buildManifest() {
+  await syncContentToPublic();
+
   const existingManifest = await loadExistingManifest();
   const existingTitleBySlug = new Map(
     existingManifest
@@ -63,6 +68,20 @@ async function buildManifest() {
   await mkdir(outputDir, { recursive: true });
   await writeFile(outputFile, JSON.stringify(manifest, null, 2), 'utf8');
   console.log(`Generated ${manifest.length} posts into ${path.relative(rootDir, outputFile)}`);
+}
+
+async function syncContentToPublic() {
+  await mkdir(publicContentDir, { recursive: true });
+  await copyDirectorySafe(postsDir, publicPostsDir);
+  await copyDirectorySafe(imagesDir, publicImagesDir);
+}
+
+async function copyDirectorySafe(sourceDir, targetDir) {
+  try {
+    await cp(sourceDir, targetDir, { recursive: true });
+  } catch {
+    // Skip missing directories to keep local setup flexible.
+  }
 }
 
 function isImageFile(fileName) {

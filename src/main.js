@@ -3,6 +3,11 @@ import './style.css';
 const app = document.querySelector('#app');
 const baseUrl = import.meta.env.BASE_URL;
 
+function withBase(relativePath) {
+  const cleanPath = relativePath.replace(/^\/+/, '');
+  return `${baseUrl}${cleanPath}`;
+}
+
 function toReadableTitle(slug) {
   return slug
     .split('-')
@@ -86,11 +91,14 @@ async function renderPostPage(posts, slug) {
   }
 
   const title = post.title || toReadableTitle(post.slug);
-  const markdownUrl = `/content/posts/${post.markdownFile}`;
+  const markdownUrl = withBase(`content/posts/${post.markdownFile}`);
   const markdownText = await fetch(markdownUrl).then((response) => response.text());
   const photosHtml = post.photos.length
     ? post.photos
-        .map((photoName) => `<img src="/content/images/${post.slug}/${photoName}" alt="${title} photo">`)
+        .map(
+          (photoName) =>
+            `<img src="${withBase(`content/images/${post.slug}/${photoName}`)}" alt="${title} photo">`,
+        )
         .join('')
     : '<p class="empty-state">No photos for this post yet.</p>';
 
@@ -131,7 +139,7 @@ function renderListPage(posts) {
 
   for (const post of posts) {
     const cover = post.photos[0]
-      ? `/content/images/${post.slug}/${post.photos[0]}`
+      ? withBase(`content/images/${post.slug}/${post.photos[0]}`)
       : '';
     const title = post.title || toReadableTitle(post.slug);
 
