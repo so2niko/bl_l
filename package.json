@@ -4,10 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "content:build": "node ./scripts/build-content-manifest.js",
-    "predev": "npm run content:build",
     "dev": "vite",
-    "prebuild": "npm run content:build",
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",

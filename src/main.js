@@ -1,12 +1,6 @@
 import './style.css';
 
 const app = document.querySelector('#app');
-const baseUrl = import.meta.env.BASE_URL;
-
-function withBase(relativePath) {
-  const cleanPath = relativePath.replace(/^\/+/, '');
-  return `${baseUrl}${cleanPath}`;
-}
 
 function toReadableTitle(slug) {
   return slug
@@ -16,18 +10,9 @@ function toReadableTitle(slug) {
     .join(' ');
 }
 
-function stripBasePath(pathname) {
-  const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  if (normalizedBase && normalizedBase !== '/' && pathname.startsWith(normalizedBase)) {
-    const result = pathname.slice(normalizedBase.length);
-    return result.startsWith('/') ? result : `/${result}`;
-  }
-  return pathname;
-}
-
 function getRoute() {
-  const relativePath = stripBasePath(window.location.pathname);
-  const parts = relativePath.split('/').filter(Boolean);
+  const hashPath = window.location.hash.replace(/^#/, '');
+  const parts = hashPath.split('/').filter(Boolean);
   if (parts[0] === 'post' && parts[1]) {
     return { page: 'post', slug: decodeURIComponent(parts[1]) };
   }
@@ -35,7 +20,7 @@ function getRoute() {
 }
 
 function toPostUrl(slug) {
-  return `${baseUrl}post/${encodeURIComponent(slug)}`;
+  return `#/post/${encodeURIComponent(slug)}`;
 }
 
 function markdownToHtml(markdown) {
@@ -83,7 +68,7 @@ async function renderPostPage(posts, slug) {
   if (!post) {
     app.innerHTML = `
       <main class="page">
-        <a href="${baseUrl}" class="back-link">Back to all experiments</a>
+        <a href="#/" class="back-link">Back to all experiments</a>
         <p class="empty-state">Post not found: ${slug}</p>
       </main>
     `;
@@ -91,20 +76,19 @@ async function renderPostPage(posts, slug) {
   }
 
   const title = post.title || toReadableTitle(post.slug);
-  const markdownUrl = withBase(`content/posts/${post.markdownFile}`);
-  const markdownText = await fetch(markdownUrl).then((response) => response.text());
+  const markdownText = post.markdown;
   const photosHtml = post.photos.length
     ? post.photos
         .map(
-          (photoName) =>
-            `<img src="${withBase(`content/images/${post.slug}/${photoName}`)}" alt="${title} photo">`,
+          (photoUrl) =>
+            `<img src="${photoUrl}" alt="${title} photo">`,
         )
         .join('')
     : '<p class="empty-state">No photos for this post yet.</p>';
 
   app.innerHTML = `
     <main class="page">
-      <a href="${baseUrl}" class="back-link" id="back-link">Back to all experiments</a>
+      <a href="#/" class="back-link" id="back-link">Back to all experiments</a>
       <article class="post-page">
         <h1>${title}</h1>
         <section class="post-markdown">${markdownToHtml(markdownText)}</section>
@@ -115,7 +99,7 @@ async function renderPostPage(posts, slug) {
   const backLink = document.querySelector('#back-link');
   backLink.addEventListener('click', (event) => {
     event.preventDefault();
-    navigateTo(baseUrl);
+    navigateTo('#/');
   });
 }
 
@@ -138,9 +122,7 @@ function renderListPage(posts) {
   }
 
   for (const post of posts) {
-    const cover = post.photos[0]
-      ? withBase(`content/images/${post.slug}/${post.photos[0]}`)
-      : '';
+    const cover = post.photos[0] ?? '';
     const title = post.title || toReadableTitle(post.slug);
 
     const card = document.createElement('button');
@@ -176,26 +158,93 @@ async function renderRoute(posts) {
 }
 
 function navigateTo(url) {
-  const nextUrl = new URL(url, window.location.origin);
-  if (nextUrl.pathname === window.location.pathname) {
+  const nextHash = url.startsWith('#') ? url : `#${url}`;
+  if (window.location.hash === nextHash) {
     return;
   }
-  window.history.pushState({}, '', nextUrl.pathname);
-  renderRoute(postsCache).catch(renderFatalError);
+  window.location.hash = nextHash;
 }
 
 function renderFatalError(error) {
   console.error('Failed to load posts:', error);
-  app.innerHTML =
-    '<p class="empty-state">Unable to load content. Check /public/data/posts.json generation.</p>';
+  app.innerHTML = '<p class="empty-state">Unable to load content.</p>';
 }
 
 let postsCache = [];
 
+function getTitleFromMarkdown(markdown, fallbackSlug) {
+  const firstContentLine = markdown
+    .split(/\r?\n/)
+    .find((line) => line.trim() !== '');
+
+  if (!firstContentLine) {
+    return toReadableTitle(fallbackSlug);
+  }
+
+  const cleanTitle = firstContentLine.replace(/^#{1,6}\s*/, '').trim();
+  return cleanTitle || toReadableTitle(fallbackSlug);
+}
+
+function collectPhotosBySlug() {
+  const imageModules = import.meta.glob('../content/images/*/*.{jpg,jpeg,png,webp,gif,avif}', {
+    eager: true,
+    import: 'default',
+  });
+  const photosBySlug = new Map();
+
+  for (const [modulePath, assetUrl] of Object.entries(imageModules)) {
+    const match = modulePath.match(/\/images\/([^/]+)\/([^/]+)$/);
+    if (!match) {
+      continue;
+    }
+    const [, slug] = match;
+    const existing = photosBySlug.get(slug) ?? [];
+    existing.push({ modulePath, assetUrl });
+    photosBySlug.set(slug, existing);
+  }
+
+  for (const [slug, entries] of photosBySlug.entries()) {
+    entries.sort((a, b) => a.modulePath.localeCompare(b.modulePath));
+    photosBySlug.set(
+      slug,
+      entries.map((entry) => entry.assetUrl),
+    );
+  }
+
+  return photosBySlug;
+}
+
+async function loadPosts() {
+  const markdownModules = import.meta.glob('../content/posts/*.md', {
+    query: '?raw',
+    import: 'default',
+  });
+  const photosBySlug = collectPhotosBySlug();
+  const posts = [];
+
+  for (const modulePath of Object.keys(markdownModules).sort((a, b) => a.localeCompare(b))) {
+    const slugMatch = modulePath.match(/\/posts\/([^/]+)\.md$/);
+    if (!slugMatch) {
+      continue;
+    }
+    const slug = slugMatch[1];
+    const markdown = await markdownModules[modulePath]();
+
+    posts.push({
+      slug,
+      title: getTitleFromMarkdown(markdown, slug),
+      markdown,
+      photos: photosBySlug.get(slug) ?? [],
+    });
+  }
+
+  return posts;
+}
+
 async function start() {
-  postsCache = await fetch(`${baseUrl}data/posts.json`).then((response) => response.json());
+  postsCache = await loadPosts();
   await renderRoute(postsCache);
-  window.addEventListener('popstate', () => {
+  window.addEventListener('hashchange', () => {
     renderRoute(postsCache).catch(renderFatalError);
   });
 }
